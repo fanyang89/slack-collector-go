@@ -90,57 +90,60 @@ var collectMessageCmd = &cli.Command{
 			fmt.Printf("Collecting channel: %s\n", channel.Name)
 			bar := newProgressBar(-1, "")
 
-			to := from.Add(time.Duration(batch) * oneDay)
-			if to.After(latest) {
-				to = latest
-			}
-			if from == to || from.After(to) {
-				break
-			}
-
-			bar.Describe(fmt.Sprintf("Collecting from %s to %s",
-				from.Format(time.DateOnly), to.Format(time.DateOnly)))
-
-			if ok, err := isCollected(db, CollectedMessage, channel.ID, from); ok {
-				from.Add(oneDay)
-				continue
-			} else if err != nil {
-				return err
-			}
-
-			err = collector.IterMessages(ctx, channel.ID, from, to, func(m *slack.Message) error {
-				mm := &Message{
-					Channel:   m.Channel,
-					User:      m.User,
-					Text:      m.Text,
-					Timestamp: mustParseTime(m.Timestamp),
-					Type:      m.Type,
-					IsStared:  m.IsStarred,
-					Team:      m.Team,
+			for {
+				to := from.Add(time.Duration(batch) * oneDay)
+				if to.After(latest) {
+					to = latest
 				}
-				mm = mm.WithHash()
+				if from == to || from.After(to) {
+					break
+				}
 
-				err = db.Clauses(clause.OnConflict{UpdateAll: true}).Create(mm).Error
+				bar.Describe(fmt.Sprintf("Collecting from %s to %s",
+					from.Format(time.DateOnly), to.Format(time.DateOnly)))
+
+				if ok, err := isCollected(db, CollectedMessage, channel.ID, from); ok {
+					from.Add(oneDay)
+					continue
+				} else if err != nil {
+					return err
+				}
+
+				err = collector.IterMessages(ctx, channel.ID, from, to, func(m *slack.Message) error {
+					mm := &Message{
+						Channel:   m.Channel,
+						User:      m.User,
+						Text:      m.Text,
+						Timestamp: mustParseTime(m.Timestamp),
+						Type:      m.Type,
+						IsStared:  m.IsStarred,
+						Team:      m.Team,
+					}
+					mm = mm.WithHash()
+
+					err = db.Clauses(clause.OnConflict{UpdateAll: true}).Create(mm).Error
+					if err != nil {
+						return err
+					}
+
+					cnt++
+					return bar.Add(1)
+				})
 				if err != nil {
 					return err
 				}
 
-				cnt++
-				return bar.Add(1)
-			})
-			if err != nil {
-				return err
+				from.Add(oneDay)
+				err = db.Clauses(clause.OnConflict{UpdateAll: true}).Create(&Collected{
+					Channel: channel.ID,
+					Type:    CollectedMessage,
+					Day:     from,
+				}).Error
+				if err != nil {
+					return err
+				}
 			}
 
-			from.Add(oneDay)
-			err = db.Clauses(clause.OnConflict{UpdateAll: true}).Create(&Collected{
-				Channel: channel.ID,
-				Type:    CollectedMessage,
-				Day:     from,
-			}).Error
-			if err != nil {
-				return err
-			}
 			_ = bar.Finish()
 			fmt.Printf("Collected %d messages\n", cnt)
 		}
@@ -148,3 +151,4 @@ var collectMessageCmd = &cli.Command{
 		return nil
 	},
 }
+it 
