@@ -151,4 +151,3 @@ var collectMessageCmd = &cli.Command{
 		return nil
 	},
 }
-it 
